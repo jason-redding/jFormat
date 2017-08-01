@@ -1,14 +1,16 @@
-(function($, document, window) {
+//=require ../js/jquery/jquery.min.js
+(function() {
 	var calendar_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 	var calendar_month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 	var calendar_day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 	var calendar_day_names_compact = ['S', 'M', 'T', 'W', 'R', 'F', 'S'];
+	var PATTERN_ISO8601 = /((\d{4})-(\d{1,2})-(\d{1,2}))T((\d{1,2}):(\d{1,2}):((\d{1,2})(\.(\d+))?))Z?/;
 	String.isDateISO8601 = function(value) {
-		return /((\d{4})-(\d{1,2})-(\d{1,2}))T((\d{1,2}):(\d{1,2}):((\d{1,2})(\.(\d+))?))Z?/.test(value);
+		return PATTERN_ISO8601.test(value);
 	};
 	String.formatISO8601Date = function(value) {
 		if (String.isDateISO8601(value)) {
-			return value.replace(/((\d{4})-(\d{1,2})-(\d{1,2}))T((\d{1,2}):(\d{1,2}):((\d{1,2})(\.(\d+))?))Z?/, '$3/$4/$2 $6:$7:$9');
+			return value.replace(PATTERN_ISO8601, '$3/$4/$2 $6:$7:$9');
 		}
 		return value;
 	};
@@ -52,10 +54,8 @@
 	String.linkUp = function(value, props) {
 		var PATTERN_URL = /\b([a-z][-a-z0-9+.]*):\/\/(?:([-a-z0-9._~%!$&'()*+,;=]+)@)?([-a-z0-9._~%]+|\[[a-f0-9:.]+\]|\[v[a-f0-9][-a-z0-9._~%!$&'()*+,;=:]+\])(?::([0-9]+))?((?:\/([-a-z0-9._~%!$&'()*+,;=:@]+))*\/?)(\?[-a-z0-9._~%!$&'()*+,;=:@\/?]*)?(\#[-a-z0-9._~%!$&'()*+,;=:@\/?]*)?\b/gi;
 		var attrs = '';
-		if ($.isPlainObject(props)) {
-			$.each(props, function(n) {
-				attrs += ' ' + n + '="' + this + '"';
-			});
+		for (var n in props) {
+			attrs += ' ' + n + '="' + props[n] + '"';
 		}
 //	var self = value;
 		var r = value.replace(PATTERN_URL, function(url, protocol, user, host, port, path, file, query, fragment, off, str) {
@@ -77,7 +77,10 @@
 	};
 	String.format = function(format, props) {
 		var out = '';
-		if (!$.isPlainObject(props)) {
+		//if (!$.isPlainObject(props)) {
+		//	props = {};
+		//}
+		if (typeof props === 'undefined') {
 			props = {};
 		}
 		if (typeof format === 'string' && format.length > 0) {
@@ -146,8 +149,15 @@
 							rv = rv.toUpperCase();
 						} else if (/^lower(case)?$/.test(tf)) {
 							rv = rv.toLowerCase();
-						} else {
-							rv = '';
+						}
+					} else if (typeof rv === 'number') {
+						var m = /^grammar:([^:]*):(.*)$/.exec(tf);
+						if (m !== null && m.length > 0) {
+							if (rv === 1) {
+								rv = m[1];
+							} else {
+								rv = m[2];
+							}
 						}
 					}
 					out += rv;
@@ -356,7 +366,7 @@
 		return Date.format(this, format);
 	};
 	Date.isLeapYear = function(year) {
-		return ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0);
+		return ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0);
 	};
 	Date.prototype.isLeapYear = function() {
 		return Date.isLeapYear(this.getFullYear());
@@ -364,7 +374,7 @@
 	Date.prototype.getPreviousMonth = function() {
 		var mi = this.getMonth();
 		var yo = 0;
-		if (mi == 0) {
+		if (mi === 0) {
 			mi = 11;
 			yo = -1;
 		} else {
@@ -375,7 +385,7 @@
 	Date.prototype.getNextMonth = function() {
 		var mi = this.getMonth();
 		var yo = 0;
-		if (mi == 11) {
+		if (mi === 11) {
 			mi = 0;
 			yo = 1;
 		} else {
@@ -408,7 +418,7 @@
 	Date.prototype.getMonthLength = function() {
 		var mi = this.getMonth();
 		var c = (calendar_days_in_month[mi]);
-		if (mi == 1) { // February only!
+		if (mi === 1) { // February only!
 			if (this.isLeapYear()) {
 				c = 29;
 			}
@@ -426,7 +436,7 @@
 		}
 		c = c.substring(0, 1);
 		var p = '';
-		for (i = this.length; i < size; i++) {
+		for (var i = this.length; i < size; i++) {
 			p += c;
 		}
 		return (p + this);
@@ -437,9 +447,9 @@
 		}
 		c = c.substring(0, 1);
 		var p = '';
-		for (i = this.length; i < size; i++) {
+		for (var i = this.length; i < size; i++) {
 			p += c;
 		}
 		return (this + p);
 	};
-})(jQuery, document, window);
+})();
