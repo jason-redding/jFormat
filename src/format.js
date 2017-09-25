@@ -1,10 +1,67 @@
-//=require ../js/jquery/jquery.min.js
+/*
+ * Copyright (C) 2017 Jason Redding
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 (function() {
 	var calendar_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 	var calendar_month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 	var calendar_day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 	var calendar_day_names_compact = ['S', 'M', 'T', 'W', 'R', 'F', 'S'];
 	var PATTERN_ISO8601 = /((\d{4})-(\d{1,2})-(\d{1,2}))T((\d{1,2}):(\d{1,2}):((\d{1,2})(\.(\d+))?))Z?/;
+	var PATTERN_DATETIME = /^(0*(\d{4})-0*(\d{1,2})(?:-0*(\d{1,2}))?|(0*(\d{4})-0*(\d{1,2})-0*(\d{1,2}))T(0*(\d{1,2}):0*(\d{1,2})(?::(0*(\d{1,2})(\.0*(\d+))?))?)Z?)$/;
+	Date.from = function(text) {
+		var m = PATTERN_DATETIME.exec(text);
+		if (m !== null && m.length > 0) {
+			var year, month, day, hour, minute, second, millisecond;
+			if ($.type(m[2]) !== 'undefined') {
+				// if date but no time
+				if ($.trim(m[2]).length > 0) {
+					year = parseInt($.trim(m[2]));
+				}
+				if ($.trim(m[3]).length > 0) {
+					month = parseInt($.trim(m[3])) - 1;
+				}
+				if ($.trim(m[4]).length > 0) {
+					day = parseInt($.trim(m[4]));
+				} else {
+					day = 1;
+				}
+				hour = minute = second = millisecond = 0;
+			} else {
+				// if date and time
+				year = parseInt($.trim(m[6]));
+				month = parseInt($.trim(m[7])) - 1;
+				day = parseInt($.trim(m[8]));
+				hour = parseInt($.trim(m[10]));
+				minute = parseInt($.trim(m[11]));
+				if ($.type(m[13]) !== 'undefined') {
+					second = parseInt($.trim(m[13]));
+				} else {
+					second = 0;
+				}
+				if ($.type(m[15]) !== 'undefined') {
+					millisecond = parseInt($.trim(m[15]));
+				} else {
+					millisecond = 0;
+				}
+			}
+			return new Date(year, month, day, hour, minute, second, millisecond);
+		}
+		return null;
+	};
 	String.isDateISO8601 = function(value) {
 		return PATTERN_ISO8601.test(value);
 	};
@@ -18,7 +75,8 @@
 		return new Date(String.formatISO8601Date(value));
 	};
 	String.prototype.decodeHTML = function() {
-		return this.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, '\'').replace(/&quot;/g, '"');
+		return this.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+		.replace(/&apos;/g, '\'').replace(/&quot;/g, '"');
 	};
 	String.prototype.removeHTML = function() {
 		var inQuote = false;
@@ -75,7 +133,166 @@
 		});
 		return r.toString();
 	};
-	String.format = function(format, props) {
+	String.parseArgs = function(input, props) {
+		var args = [];
+		if ($.type(input) !== 'string') {
+			return args;
+		}
+		var pos = 0;
+		var startIndex = 0;
+		var openType = {
+			"'": 'string',
+			'"': 'string',
+			'[': 'array',
+			'{': 'object'
+		};
+		var closeType = {
+			"'": 'string',
+			'"': 'string',
+			']': 'array',
+			'}': 'object'
+		};
+		var openPairs = {
+			array: '[',
+			object: '{'
+		};
+		var closePairs = {
+			array: ']',
+			object: '}'
+		};
+		var depth = {};
+		var c, token, types = [];
+		var inString = false;
+		token = '';
+		while ((c = next()) !== null) {
+			if (inString !== false) {
+				if (c === '\\' && input.charAt(startIndex) === inString) {
+					token += "'";
+					startIndex++;
+					continue;
+				} else if (c !== inString) {
+					token += c;
+					continue;
+				}
+			}
+			if (/\s/.test(c)) {
+				continue;
+			} else if (/['"]/.test(c)) {
+				if (c === inString) {
+					token += '"';
+					inString = false;
+					if ($.inArray('array', types) === -1 && $.inArray('object', types) === -1 && types[types.length - 1] === closeType[c]) {
+						evalArg(token);
+					} else {
+						types.pop();
+					}
+					continue;
+				} else {
+					inString = c;
+					c = '"';
+				}
+			} else if (/\d/.test(c)) {
+				types.push('number');
+				var hasDot = false;
+				token += c;
+				while ((c = next()) !== null) {
+					if (/[.\d]/.test(c)) {
+						if (c === '.') {
+							if (!hasDot) {
+								hasDot = true;
+							} else {
+								break;
+							}
+						}
+						token += c;
+					} else {
+						if (($.inArray('array', types) === -1 && $.inArray('object', types) === -1) && c === ',') {
+							evalArg(token);
+						} else {
+							types.pop();
+						}
+						break;
+					}
+				}
+				if (c === null) {
+					continue;
+				}
+			}
+			if (c in openType) {
+				types.push(openType[c]);
+				token += c;
+				doOpen(c);
+				continue;
+			} else if (c in closeType) {
+				token += c;
+				if ((closeType[c] in depth) && types[types.length - 1] === closeType[c] && depth[closeType[c]] === 1) {
+					evalArg(token);
+					continue;
+				}
+			} else if (($.inArray('array', types) === -1 && $.inArray('object', types) === -1) && c === ',') {
+				token = '';
+				continue;
+			}
+			token += c;
+		}
+		if (token.length > 0) {
+			evalArg(token);
+		}
+		function evalArg() {
+			var type = types.pop();
+			try {
+				if (type === 'string') {
+					token = ('' + token).replace(/(^"|"$)/g, '');
+				} else if (type === 'number') {
+					token = parseFloat(token);
+				} else if (type === 'object' || type === 'array') {
+					token = JSON.parse(token);
+				} else {
+					try {
+						var temp = String.format('${' + token + '}', props);
+						token = temp;
+					} catch (ex) {
+						console.dir(ex);
+					}
+				}
+			} catch (ex) {
+				console.dir(ex);
+			}
+			args.push(token);
+			token = '';
+		}
+		function doOpen(c) {
+			if (!(c in openType) || !(openType[c] in openPairs)) {
+				return;
+			}
+			if (!(c in depth)) {
+				depth[openType[c]] = 0;
+			}
+			depth[openType[c]]++;
+		}
+		function doClose() {
+			if (!(c in openType) || !(openType[c] in closePairs)) {
+				return;
+			}
+			c = closePairs[c];
+			if (!(c in depth)) {
+				depth[c] = 1;
+			}
+			depth[c]--;
+		}
+		function next(peek) {
+			if (startIndex < input.length) {
+				var r = input.substring(startIndex, startIndex + 1);
+				if (peek !== true) {
+					startIndex++;
+				}
+				return r;
+			}
+			return null;
+		}
+		return args;
+	};
+	String.format = function(format, props, defaultProperties) {
 		var out = '';
 		//if (!$.isPlainObject(props)) {
 		//	props = {};
@@ -127,41 +344,121 @@
 				if (t.length > 1) {
 					tf = t[1];
 				}
-				rv = (tn in props ? props[tn] : null);
-				if (rv !== null) {
-					if (typeof rv === 'object' && rv instanceof Date) {
-						if (tf !== null) {
-							rv = Date.format(rv, tf);
-						} else {
-							rv = Date.format(rv, 'M/d/yyyy');
-						}
-					} else if (typeof rv === 'string') {
-						if (tf === null) {
-							tf = 'raw';
-						}
-						if (tf === 'text') {
-							rv = rv.removeHTML().decodeHTML();
-						} else if (tf === 'raw') {
-							// do nothing; return rv unchanged.
-						} else if (tf === 'html') {
-							rv = rv.decodeHTML();
-						} else if (/^upper(case)?$/.test(tf)) {
-							rv = rv.toUpperCase();
-						} else if (/^lower(case)?$/.test(tf)) {
-							rv = rv.toLowerCase();
-						}
-					} else if (typeof rv === 'number') {
-						var m = /^grammar:([^:]*):(.*)$/.exec(tf);
-						if (m !== null && m.length > 0) {
-							if (rv === 1) {
-								rv = m[1];
-							} else {
-								rv = m[2];
+				//rv = (tn in props ? props[tn] : null);
+				var propScope = props;
+				var tpath = tn.split('.');
+				$.each(tpath, function(pathIndex, scopeName) {
+					while (true) {
+						try {
+							if (scopeName in propScope) {
+								propScope = propScope[scopeName];
+								break;
 							}
+						} catch (ex) {
+						}
+						rv = null;
+						return false;
+					}
+					if (pathIndex === (tpath.length - 1)) {
+						if ($.isPlainObject(propScope)) {
+							if ($.type(defaultProperties) === 'string') {
+								defaultProperties = [defaultProperties];
+							}
+							var defaultProperty = null;
+							if ($.isArray(defaultProperties)) {
+								$.each(defaultProperties, function(propIndex, propName) {
+									if (propName in propScope) {
+										defaultProperty = propName;
+										return false;
+									}
+								});
+							}
+							if (defaultProperty !== null) {
+								rv = propScope[defaultProperty];
+							} else {
+								rv = null;
+							}
+						} else {
+							rv = propScope;
 						}
 					}
-					out += rv;
+				});
+
+				out += evalTokenMod(tn, tf, rv, props);
+			};
+			var evalTokenMod = function(token, format, value, props) {
+				if (format === null) {
+					if (value instanceof Date) {
+						format = "date('M/d/yyyy')";
+					} else {
+						format = 'raw';
+					}
 				}
+				var pattern = /^([a-z-][.a-z0-9-]*)(?:\(\s*([^,]*(,[^,]*)*)\s*\))?$/;
+				var matcher = null;
+				if (!pattern.test(format)) {
+					if (value instanceof Date) {
+						format = 'date("' + format + '")';
+					}
+				}
+				if ((matcher = pattern.exec(format)) !== null && matcher.length > 0) {
+					var fName = matcher[1];
+					var fArgs = String.parseArgs(matcher[2], props);
+					if (fName === 'raw') {
+					} else if (fName === 'text') {
+						value = ('' + value).removeHTML().decodeHTML();
+					} else if (fName === 'html') {
+						value = ('' + value).decodeHTML();
+					} else if (fName === 'date') {
+						if (value instanceof Date) {
+							value = Date.format(value, fArgs[0]);
+						}
+					} else if (fName === 'grammar') {
+						if (fArgs.length > 1) {
+							if (parseFloat($.trim(value)) === 1) {
+								value = fArgs[0];
+							} else {
+								value = fArgs[1];
+							}
+						}
+					} else if (fName === 'percent') {
+						if (fArgs.length === 0) {
+							fArgs.push(0);
+						}
+						if (fArgs.length < 2) {
+							fArgs.unshift(0);
+						}
+						value = Number.prototype.toFixed.call((parseFloat(value) * 100), parseFloat(fArgs[1]));
+						value = value.replace(new RegExp('\\.?0{0,' + (parseInt(fArgs[1]) - parseInt(fArgs[0])) + '}$'), '') + '%';
+					} else if (fName === 'round') {
+						value = Number.prototype.toFixed.call((parseFloat(value) * 100), parseFloat(fArgs[0] || 0));
+					} else if (fName === 'instead') {
+						value = fArgs[0];
+					} else if (fName === 'default') {
+						if (fArgs.length === 0) {
+							fArgs.push('');
+						}
+						if (value === null) {
+							value = fArgs[0];
+						}
+//						try {
+//							console.log(value);
+//							var temp = evalToken(value);
+//							console.log(temp);
+//							//value = temp;
+//						} catch (ex) {
+//							console.dir(ex);
+//						}
+					} else if (/^upper(case)?$/.test(fName)) {
+						value = ('' + value).toUpperCase();
+					} else if (/^lower(case)?$/.test(fName)) {
+						value = ('' + value).toLowerCase();
+					}
+				}
+				if (value === null) {
+					value = '';
+				}
+				return value;
 			};
 
 			while (startIndex < format.length) {
@@ -268,7 +565,7 @@
 			h = 12;
 		}
 		var out;
-		if (String.trim('' + format).length === 0) {
+		if (('' + format).length === 0) {
 			format = 'M/d/yyyy h:mm:ss aa';
 		}
 		var PATTERN_ALL_SYMBOLS = /('[^']*'|'[^']*$|(y|M|d|F|E|a|H|k|K|h|m|s|S)+(\{[^}]*\})?)/gm;
